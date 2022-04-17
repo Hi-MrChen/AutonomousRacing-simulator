@@ -1,2 +1,0 @@
-f1tenth_simulator
--DCATKIN_DEVEL_PREFIX=/home/alexzheng/Documents/GitHub/AutonomousRacing-simulator/devel -DCMAKE_INSTALL_PREFIX=/home/alexzheng/Documents/GitHub/AutonomousRacing-simulator/install -G Unix Makefiles
