@@ -12,6 +12,8 @@
 
 // Subscribe to a topic with this message type
 #include <nav_msgs/Odometry.h>
+#include <std_msgs/Float32MultiArray.h>
+#include <std_msgs/Int32MultiArray.h>
 
 // for printing
 #include <iostream>
@@ -19,90 +21,195 @@
 // for RAND_MAX
 #include <cstdlib>
 
+bool isRandomWalker;
+
 class RandomWalker {
 private:
     // A ROS node
     ros::NodeHandle n;
 
     // car parameters
-    double max_speed, max_steering_angle;
+    double max_speed, max_steering_angle, max_throttle;
+    double max_incre;
+
+    // Mux controller array
+    std::vector<bool> mux_controller;
+    int mux_size;
+    // For printing
+    std::vector<bool> prev_mux;
 
     // Listen for odom messages
     ros::Subscriber odom_sub;
 
+    // Listen for mux messages 
+    ros::Subscriber mux_sub;
+
     // Publish drive data
     ros::Publisher drive_pub;
 
+    // Publish control command 
+    ros::Publisher ctrl_pub;
+
     // previous desired steering angle
     double prev_angle=0.0;
+    double prev_throttle=0.0;
+    double prev_speed=0.0;
+
+    // 
+    int throttle_num = 0;
+    int steering_num = 0;
+    double throttle = 0;
+    double steering = 0;
 
 
 public:
+
     RandomWalker() {
         // Initialize the node handle
         n = ros::NodeHandle("~");
 
         // get topic names
-        std::string drive_topic, odom_topic;
+        std::string drive_topic, odom_topic, mux_topic;
         n.getParam("rand_drive_topic", drive_topic);
         n.getParam("odom_topic", odom_topic);
+        n.getParam("mux_topic", mux_topic);
 
         // get car parameters
         n.getParam("max_speed", max_speed);
         n.getParam("max_steering_angle", max_steering_angle);
+        n.getParam("max_throttle", max_throttle);
+        n.getParam("max_incre", max_incre);
+
+        // get size of mux
+        n.getParam("mux_size", mux_size);
+        
+        int random_walker_mux_idx;
+        n.getParam("random_walker_mux_idx", random_walker_mux_idx);
+
+        // initialize mux controller
+        mux_controller.reserve(mux_size);
+        prev_mux.reserve(mux_size);
+        for (int i = 0; i < mux_size; i++) {
+            mux_controller[i] = false;
+            prev_mux[i] = false;
+        }
 
         // Make a publisher for drive messages
         drive_pub = n.advertise<ackermann_msgs::AckermannDriveStamped>(drive_topic, 10);
 
+        // Make a publisher for control commands 
+        ctrl_pub = n.advertise<std_msgs::Float32MultiArray>("/ctrl", 10);
+
         // Start a subscriber to listen to odom messages
-        odom_sub = n.subscribe(odom_topic, 1, &RandomWalker::odom_callback, this);
+        // odom_sub = n.subscribe(odom_topic, 1, &RandomWalker::odom_callback, this);
 
-
+        // Start a subscriber to listen to mux messages
+        mux_sub = n.subscribe(mux_topic, 1, &RandomWalker::mux_callback, this);
     }
 
+    void mux_callback(const std_msgs::Int32MultiArray & msg) {
+        // reset mux member variable every time it's published
+        for (int i = 0; i < mux_size; i++) {
+            mux_controller[i] = bool(msg.data[i]);
+        }
+        if( mux_controller[2]){
+            isRandomWalker = true;
+        }
+    }
 
-    void odom_callback(const nav_msgs::Odometry & msg) {
+    void mode1() {
         // publishing is done in odom callback just so it's at the same rate as the sim
 
         // initialize message to be published
         ackermann_msgs::AckermannDriveStamped drive_st_msg;
         ackermann_msgs::AckermannDrive drive_msg;
 
-        /// SPEED CALCULATION:
-        // set constant speed to be half of max speed
-        drive_msg.speed = max_speed / 2.0;
+        // only change the steering 
+        if (steering_num < 200 && throttle_num < 200){
+            steering_num += 1;
 
+            // get random 
+            double random = ((double) rand() / RAND_MAX);
+            double range = max_steering_angle / 2.0;
+            double rand_ang = random * range - range / 2.0;  // Maximum 1/4
 
-        /// STEERING ANGLE CALCULATION
-        // random number between 0 and 1
-        double random = ((double) rand() / RAND_MAX);
-        // good range to cause lots of turning
-        double range = max_steering_angle / 2.0;
-        // compute random amount to change desired angle by (between -range and range)
-        double rand_ang = range * random - range / 2.0;
+            // sometimes change sign so it turns more (basically add bias to continue turning in current direction)
+            random = ((double) rand() / RAND_MAX); 
 
-        // sometimes change sign so it turns more (basically add bias to continue turning in current direction)
-        random = ((double) rand() / RAND_MAX);
-
-        // random >0.8 rand_ang & sign_prev same sign
-        if ((random > .8) && (prev_angle != 0)) {
+            if ((random > 0.8) && (prev_angle != 0)) {
             double sign_rand = rand_ang / std::abs(rand_ang);
             double sign_prev = prev_angle / std::abs(prev_angle);
             rand_ang *= sign_rand * sign_prev;
+            }   
+
+            // set angle (add random change to previous angle)
+            steering = std::min(std::max(prev_angle + rand_ang, -max_steering_angle), max_steering_angle);
+
+             // reset previous desired angle
+            prev_angle = steering;
+        }
+        else if (throttle_num < 200){
+            steering_num =0;
+            throttle_num += 1; 
+
+            double random = ((double) rand() / RAND_MAX);
+            double range = max_throttle / 4.0; 
+            double rand_throttle  = random * range - range / 2.0;  // Maximum 1/4
+
+            // sometimes change sign so it turns more (basically add bias to continue turning in current direction)
+            random = ((double) rand() / RAND_MAX); 
+
+            if ((random > 0.6) && (prev_throttle != 0)) {
+            double sign_rand = rand_throttle / std::abs(rand_throttle);
+            double sign_prev = prev_throttle / std::abs(prev_throttle);
+            rand_throttle *= sign_rand * sign_prev;
+            }
+
+            // set angle (add random change to previous angle)
+            throttle = std::min(std::max(prev_throttle + rand_throttle, -max_throttle), max_throttle);
+            
+            // reset prev_throttle
+            prev_throttle = throttle;
         }
 
-        // set angle (add random change to previous angle)
-        drive_msg.steering_angle = std::min(std::max(prev_angle + rand_ang, -max_steering_angle), max_steering_angle);
+        else{
+            throttle = 0;
+            steering = 0;
+            ROS_INFO("Over !!!!!!!!!!!!!!!!!!!!!!\n");
+        }
 
-        // reset previous desired angle
-        prev_angle = drive_msg.steering_angle;
+        // publish control command
+        std_msgs::Float32MultiArray ctrl_msg;
+        ctrl_msg.data.clear();
+        ctrl_msg.data.push_back(throttle);
+        ctrl_msg.data.push_back(steering);
+        ctrl_msg.data.push_back(throttle_num);
+        ctrl_msg.data.push_back(steering_num);
+        ctrl_pub.publish(ctrl_msg);
+
+
+        // Calculate desired velocity 
+        double desired_velocity= prev_speed * 0.8;
+        if (throttle * desired_velocity >= 0 ){
+            desired_velocity = desired_velocity + max_incre * throttle;
+        }
+        else {
+            desired_velocity = desired_velocity + 1.5 * max_incre * throttle;
+        }
+        desired_velocity = std::min(std::max(desired_velocity, -max_speed), max_speed);
+        prev_speed = desired_velocity;
+
+        // publish drive_msg
+        double desired_steer = steering;
+
+        drive_msg.speed = desired_velocity;
+        drive_msg.steering_angle = desired_steer;
 
         // set drive message in drive stamped message
         drive_st_msg.drive = drive_msg;
 
         // publish AckermannDriveStamped message to drive topic
         drive_pub.publish(drive_st_msg);
-
 
     }
 
@@ -112,6 +219,18 @@ public:
 int main(int argc, char ** argv) {
     ros::init(argc, argv, "random_walker");
     RandomWalker rw;
-    ros::spin();
+
+    ros::Rate loop_rate(50); 
+
+    while(ros::ok())
+    {   
+        ros::spinOnce();
+        if(isRandomWalker){
+            rw.mode1();
+        }
+    
+        loop_rate.sleep();
+    }
+    
     return 0;
 }
