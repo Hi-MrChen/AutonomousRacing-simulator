@@ -15,6 +15,7 @@
 #include <nav_msgs/Odometry.h>
 #include <sensor_msgs/Imu.h>
 #include <std_msgs/Int32MultiArray.h>
+#include <std_msgs/Float32MultiArray.h>
 #include <sensor_msgs/Joy.h>
 #include <std_msgs/String.h>
 
@@ -45,6 +46,7 @@ using namespace racecar_simulator;
 double x=0.0, y=0.0, theta=0.0;
 double gt_x=0.0, gt_y=0.0, gt_theta=0.0;
 double throttle=0.0, steering=0.0;
+double throttle_num=0, steering_num=0;
 
 void pose_callback(const geometry_msgs::PoseStamped & msg) {
     // x = msg.pose.position.x;
@@ -90,6 +92,13 @@ void drive_callback(const ackermann_msgs::AckermannDriveStamped & msg) {
     ;
 }
 
+void ctrl_callback(const std_msgs::Float32MultiArray &msg){
+    throttle = msg.data[0];
+    steering = msg.data[1];
+    throttle_num = msg.data[2];
+    steering_num = msg.data[3];
+
+}
 
 
 
@@ -98,12 +107,13 @@ int main(int argc, char ** argv) {
     ros::init(argc, argv, "recorder");
     ros::NodeHandle n;
 
-    ros::Subscriber drive_sub = n.subscribe("/drive", 1, drive_callback);
-    ros::Subscriber joy_sub = n.subscribe("/joy", 1, joy_callback);
+    ros::Subscriber drive_sub = n.subscribe("/drive", 1, drive_callback, ros::TransportHints().tcpNoDelay());
+    ros::Subscriber joy_sub = n.subscribe("/joy", 1, joy_callback, ros::TransportHints().tcpNoDelay());
     // ros::Subscriber key_sub = n.subscribe(key_topic, 1, key_callback);
     // ros::Subscriber pose_sub = n.subscribe(pose_topic, 1, pose_callback);
-    ros::Subscriber gt_pose_sub = n.subscribe("/gt_pose", 1, gt_pose_callback);
-    ros::Subscriber odom_sub = n.subscribe("/odom", 1, odom_callback);
+    ros::Subscriber gt_pose_sub = n.subscribe("/gt_pose", 1, gt_pose_callback, ros::TransportHints().tcpNoDelay());
+    ros::Subscriber odom_sub = n.subscribe("/odom", 1, odom_callback, ros::TransportHints().tcpNoDelay());
+    ros::Subscriber ctrl_sub = n.subscribe("/ctrl", 1, ctrl_callback, ros::TransportHints().tcpNoDelay());
         
     std::ofstream file("new.csv");
 
@@ -114,7 +124,8 @@ int main(int argc, char ** argv) {
         ros:: spinOnce();
         
         file << x << "," << y << "," << theta << "," 
-        << throttle << "," << steering << std::endl ;
+        << throttle << "," << steering << "," 
+        << throttle_num << "," << steering_num << std::endl ;
 
         loop_rate.sleep();
     }

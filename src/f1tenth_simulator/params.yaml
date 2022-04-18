@@ -11,7 +11,6 @@ buffer_length: 5
 max_speed: 12 #  meters/second
 max_incre: 4  #  meters/second
 max_steering_angle: 0.4189 # radians
-max_throttle: 0.8
 max_accel: 7.51 # meters/second^2
 max_decel: 8.26 # meters/second^2
 max_steering_vel: 3.2 # radians/second
@@ -24,8 +23,12 @@ C_S_rear: 5.4562 #.79 # 1/rad ? (estimated weight/4)
 mass: 3.47 # kg (measured on car 'lidart')
 moment_inertia: .04712 # kg m^2 (estimated as a rectangle with width and height of car and evenly distributed mass, then shifted to account for center of mass location)
 
+# Limits of the control 
+max_throttle: 0.8
+max_steering: 1.0
+
 # The rate at which the pose and the lidar publish
-update_pose_rate: 0.001
+update_pose_rate: 0.005
 
 # Lidar simulation parameters
 scan_beams: 1080
